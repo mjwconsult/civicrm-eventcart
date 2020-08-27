@@ -409,6 +409,7 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
 
     // @todo replace this with a profile
     $contact = \Civi\Api4\Contact::get()
+      ->setCheckPermissions(FALSE)
       ->addSelect('first_name', 'last_name')
       ->addWhere('id', '=', $contactID)
       ->execute()
@@ -416,6 +417,7 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     $this->_defaults['first_name'] = $contact['first_name'] ?? '';
     $this->_defaults['last_name'] = $contact['last_name'] ?? '';
     $email = \Civi\Api4\Email::get()
+      ->setCheckPermissions(FALSE)
       ->addSelect('email')
       ->addWhere('contact_id', '=', $contactID)
       ->addOrderBy('is_billing', 'DESC')

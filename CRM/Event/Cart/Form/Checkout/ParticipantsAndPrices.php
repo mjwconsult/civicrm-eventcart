@@ -135,6 +135,7 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
         if ($contact_id) {
           $statusTypes = CRM_Event_PseudoConstant::participantStatus(NULL, 'is_counted = 1');
           $participant = \Civi\Api4\Participant::get()
+            ->setCheckPermissions(FALSE)
             ->addWhere('event_id', '=', $event_in_cart->event_id)
             ->addWhere('contact_id', '=', $contact_id)
             ->addWhere('status_id', 'IN', array_keys($statusTypes))

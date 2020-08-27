@@ -68,6 +68,7 @@ class CRM_Event_Cart_BAO_MerParticipant extends CRM_Event_BAO_Participant {
       return NULL;
     }
     $participants = \Civi\Api4\Participant::get()
+      ->setCheckPermissions(FALSE)
       ->addWhere('cart_id', '=', $event_cart_id)
       ->execute();
     $result = [];
@@ -88,6 +89,7 @@ class CRM_Event_Cart_BAO_MerParticipant extends CRM_Event_BAO_Participant {
       return NULL;
     }
     $participants = \Civi\Api4\Participant::get()
+      ->setCheckPermissions(FALSE)
       ->addWhere('event_id', '=', $event_id)
       ->addWhere('cart_id', '=', $event_cart_id)
       ->execute();
@@ -105,6 +107,7 @@ class CRM_Event_Cart_BAO_MerParticipant extends CRM_Event_BAO_Participant {
    */
   public static function get_by_id($id) {
     $participant = \Civi\Api4\Participant::get()
+      ->setCheckPermissions(FALSE)
       ->addWhere('id', '=', $id)
       ->execute()
       ->first();
@@ -113,6 +116,7 @@ class CRM_Event_Cart_BAO_MerParticipant extends CRM_Event_BAO_Participant {
 
   public function load_associations() {
     $email = \Civi\Api4\Email::get()
+      ->setCheckPermissions(FALSE)
       ->addWhere('contact_id', '=', $this->contact_id)
       ->addOrderBy('is_primary', 'DESC')
       ->execute()
