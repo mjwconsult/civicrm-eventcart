@@ -4,9 +4,6 @@
 
 This extension implements https://github.com/civicrm/civicrm-core/pull/17886 on CiviCRM 5.28 to enable payments and multiple payment processors.
 
-* Overrides Order API per https://github.com/civicrm/civicrm-core/pull/18096
-* Overrides PropertyBag per https://github.com/civicrm/civicrm-core/pull/18219
-
 ## Installation
 
 * The MJW version adds a new settings page at Administer->CiviEvent->Event Cart Settings:
