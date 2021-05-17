@@ -8,6 +8,12 @@ class CRM_Event_Cart_BAO_EventInCart extends CRM_Event_Cart_DAO_EventInCart impl
   public $event;
   public $event_cart;
   public $location = NULL;
+
+  /**
+   * Array of CRM_Event_Cart_BAO_MerParticipant indexed by participant ID
+   *
+   * @var array
+   */
   public $participants = [];
 
   /**
@@ -195,7 +201,7 @@ class CRM_Event_Cart_BAO_EventInCart extends CRM_Event_Cart_DAO_EventInCart impl
       }
       $newParticipant = CRM_Event_Cart_BAO_MerParticipant::create($participantParams);
       $this->event_cart->defaultParticipantContactID = $newParticipant->contact_id;
-      $this->participants[] = $newParticipant;
+      $this->participants[$newParticipant->id] = $newParticipant;
     }
     /** @var \CRM_Event_BAO_Participant $participant */
     foreach ($this->participants as $participant) {

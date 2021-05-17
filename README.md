@@ -2,7 +2,7 @@
 
 ## MJW Version
 
-This extension implements https://github.com/civicrm/civicrm-core/pull/17886 on CiviCRM 5.28 to enable payments and multiple payment processors.
+This extension implements https://github.com/civicrm/civicrm-core/pull/17886 on CiviCRM 5.35 to enable payments and multiple payment processors.
 
 ## Installation
 

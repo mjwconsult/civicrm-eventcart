@@ -55,10 +55,8 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     }
 
     // Add reCAPTCHA
-    if (count($this->_paymentProcessors) >= 1) {
-      if (!$this->getLoggedInUserContactID()) {
-        CRM_Utils_ReCAPTCHA::enableCaptchaOnForm($this);
-      }
+    if (!CRM_Core_Session::getLoggedInContactID()) {
+      CRM_Utils_ReCAPTCHA::enableCaptchaOnForm($this);
     }
   }
 
@@ -284,25 +282,46 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
    * Post process form.
    */
   public function postProcess() {
-    $trxnDetails = NULL;
     $params = $this->_submitValues;
     $transaction = new CRM_Core_Transaction();
 
     $contactID = $this->getContactID();
     $ctype = CRM_Core_DAO::getFieldValue('CRM_Contact_DAO_Contact', $contactID, 'contact_type');
-    $params = $this->prepareParamsForPaymentProcessor($params);
-    foreach ($params as $key => $value) {
-      $fields[$key] = 1;
+
+    $fields = [];
+
+    $fields['email-Primary'] = 1;
+    $this->_params = $params;
+    // now set the values for the billing location.
+    foreach (array_keys($this->_fields) as $name) {
+      $fields[$name] = 1;
     }
-    CRM_Contact_BAO_Contact::createProfileContact(
-      $params,
-      $fields,
-      $this->getContactID(),
-      NULL,
-      NULL,
-      $ctype,
-      TRUE
-    );
+
+    $fields["address_name-{$this->_bltID}"] = 1;
+
+    list($hasBillingField, $addressParams) = CRM_Contribute_BAO_Contribution::getPaymentProcessorReadyAddressParams($this->_params, $this->_bltID);
+    $fields = $this->formatParamsForPaymentProcessor($fields);
+
+    if ($hasBillingField) {
+      $addressParams = array_merge($this->_params, $addressParams);
+      // CRM-18277 don't let this get passed in because we don't want contribution source to override contact source.
+      // Ideally we wouldn't just randomly merge everything into addressParams but just pass in a relevant array.
+      // Note this source field is covered by a unit test.
+      if (isset($addressParams['source'])) {
+        unset($addressParams['source']);
+      }
+      //here we are setting up the billing contact - if different from the member they are already created
+      // but they will get billing details assigned
+      CRM_Contact_BAO_Contact::createProfileContact(
+        $params,
+        $fields,
+        $contactID,
+        NULL,
+        NULL,
+        $ctype
+      );
+    }
+
     $params['contact_id'] = $contactID;
     $params['now'] = date('YmdHis');
     $params['currency'] = $this->paymentPropertyBag->getCurrency();
@@ -313,13 +332,12 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
       $this->paymentPropertyBag->setContributionID($contributionID);
       $this->paymentPropertyBag->mergeLegacyInputParams($params);
 
-      $payment = Civi\Payment\System::singleton()->getByProcessor($this->_paymentProcessor);
+      $payment = Civi\Payment\System::singleton()->getById($params['payment_processor_id']);
       try {
         $result = $payment->doPayment($this->paymentPropertyBag);
         $completedStatusId = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
-        //$this->assign('trxn_id', $result['trxn_id']);
         if ($result['payment_status_id'] == $completedStatusId) {
-          $result = civicrm_api3('Payment', 'create', [
+          civicrm_api3('Payment', 'create', [
             'contribution_id' => $this->paymentPropertyBag->getContributionID(),
             'total_amount' => $this->paymentPropertyBag->getAmount(),
             'trxn_date' => $result['now'],
@@ -408,16 +426,14 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     CRM_Core_Payment_Form::setDefaultValues($this, $contactID);
 
     // @todo replace this with a profile
-    $contact = \Civi\Api4\Contact::get()
-      ->setCheckPermissions(FALSE)
+    $contact = \Civi\Api4\Contact::get(FALSE)
       ->addSelect('first_name', 'last_name')
       ->addWhere('id', '=', $contactID)
       ->execute()
       ->first();
     $this->_defaults['first_name'] = $contact['first_name'] ?? '';
     $this->_defaults['last_name'] = $contact['last_name'] ?? '';
-    $email = \Civi\Api4\Email::get()
-      ->setCheckPermissions(FALSE)
+    $email = \Civi\Api4\Email::get(FALSE)
       ->addSelect('email')
       ->addWhere('contact_id', '=', $contactID)
       ->addOrderBy('is_billing', 'DESC')
@@ -530,8 +546,9 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
 
     // @fixme: This will always use the currency of the "last" event.
     //   That's probably ok because they should all use the same currency.
-    $this->assign('currency', $event_in_cart->event->currency);
-    $this->paymentPropertyBag->setCurrency($event_in_cart->event->currency);
+    $currency = $event_in_cart->event->currency ?? CRM_Core_Config::singleton()->defaultCurrency;
+    $this->assign('currency', $currency);
+    $this->paymentPropertyBag->setCurrency($currency);
     $this->paymentPropertyBag->setAmount($this->total);
   }
 
