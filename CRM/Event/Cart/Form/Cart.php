@@ -101,24 +101,23 @@ class CRM_Event_Cart_Form_Cart extends CRM_Core_Form {
    *
    * @return int|mixed|null
    */
-  public static function find_or_create_contact($fields = []) {
-    $contact_id = self::find_contact($fields);
-
-    if ($contact_id) {
-      return $contact_id;
+  public static function find_or_create_contact($fields = [], $contactID = NULL) {
+    if (!$contactID) {
+      $contactID = self::find_contact($fields);
     }
+
     $contact_params = [
       'email-Primary' => $fields['email'] ?? NULL,
       'first_name' => $fields['first_name'] ?? NULL,
       'last_name' => $fields['last_name'] ?? NULL,
-      'is_deleted' => CRM_Utils_Array::value('is_deleted', $fields, TRUE),
+      'is_deleted' => $contactID ? FALSE : TRUE,
     ];
     $no_fields = [];
-    $contact_id = CRM_Contact_BAO_Contact::createProfileContact($contact_params, $no_fields, NULL);
-    if (!$contact_id) {
+    $contactID = CRM_Contact_BAO_Contact::createProfileContact($contact_params, $no_fields, $contactID);
+    if (!$contactID) {
       CRM_Core_Session::setStatus(ts("Could not create or match a contact with that email address. Please contact the webmaster."), '', 'error');
     }
-    return $contact_id;
+    return $contactID;
   }
 
   /**

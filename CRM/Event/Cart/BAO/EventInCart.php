@@ -1,5 +1,7 @@
 <?php
 
+use CRM_Event_Cart_ExtensionUtil as E;
+
 /**
  * Class CRM_Event_Cart_BAO_EventInCart
  */
@@ -265,7 +267,7 @@ class CRM_Event_Cart_BAO_EventInCart extends CRM_Event_Cart_DAO_EventInCart impl
       return $this->id;
     }
     if ($offset == 'main_conference_event_id') {
-      return $this->main_conference_event_id;
+      return $this->main_conference_event_id ?? NULL;
     }
     $fields = &$this->fields();
     return $fields[$offset];

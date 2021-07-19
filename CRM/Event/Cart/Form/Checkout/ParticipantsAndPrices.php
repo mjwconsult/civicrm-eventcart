@@ -1,5 +1,7 @@
 <?php
 
+use Civi\Api4\Participant;
+
 /**
  * Class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices
  */
@@ -134,7 +136,7 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
 
         if ($contact_id) {
           $statusTypes = CRM_Event_PseudoConstant::participantStatus(NULL, 'is_counted = 1');
-          $participant = \Civi\Api4\Participant::get(FALSE)
+          $participant = Participant::get(FALSE)
             ->addWhere('event_id', '=', $event_in_cart->event_id)
             ->addWhere('contact_id', '=', $contact_id)
             ->addWhere('status_id', 'IN', array_keys($statusTypes))
@@ -212,27 +214,29 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
    * Post process function.
    */
   public function postProcess() {
-    if (!array_key_exists('event', $this->_submitValues)) {
-      return;
-    }
-    // XXX de facto primary key
     $email_to_contact_id = [];
-    foreach ($this->_submitValues['event'] as $event_id => $participants) {
-      foreach ($participants['participant'] as $participant_id => $fields) {
-        if (array_key_exists($fields['email'], $email_to_contact_id)) {
-          $contact_id = $email_to_contact_id[$fields['email']];
-        }
-        else {
-          $contact_id = self::find_or_create_contact($fields);
-          $email_to_contact_id[$fields['email']] = $contact_id;
+    $submittedValues = $this->controller->exportValues($this->_name);
+
+      foreach ($submittedValues['field'] as $participant_id => $fields) {
+        $participant = Participant::get(FALSE)
+          ->addWhere('id', '=', $participant_id)
+          ->execute()
+          ->first();
+
+        // Email sometimes gets passed in as eg. "email-Primary"
+        // Normalise it to "email"
+        foreach ($fields as $key => $value) {
+          if (substr($key, 0, 5) === 'email') {
+            $fields['email'] = $fields[$key];
+            unset($fields[$key]);
+            break;
+          }
         }
 
-        $participant = $this->cart->get_event_in_cart_by_event_id($event_id)->get_participant_by_id($participant_id);
+        $contact_id = self::find_or_create_contact($fields, $participant['contact_id']);
+        $participant = $this->cart->get_event_in_cart_by_event_id($participant['event_id'])->get_participant_by_id
+        ($participant_id);
         if ($participant->contact_id && $contact_id != $participant->contact_id) {
-          $defaults = [];
-          $params = ['id' => $participant->contact_id];
-          $temporary_contact = CRM_Contact_BAO_Contact::retrieve($params, $defaults);
-
           foreach ($this->cart->get_subparticipants($participant) as $subparticipant) {
             $subparticipant->contact_id = $contact_id;
             $subparticipant->save();
@@ -240,19 +244,12 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
 
           $participant->contact_id = $contact_id;
           $participant->save();
-
-          if ($temporary_contact->is_deleted) {
-            // ARGH a permissions check prevents us from using skipUndelete,
-            // so we potentially leave records pointing to this contact for now
-            // CRM_Contact_BAO_Contact::deleteContact($temporary_contact->id);
-            $temporary_contact->delete();
-          }
         }
 
         $participantParams = [
           'id' => $participant_id,
           'cart_id' => $this->cart->id,
-          'event_id' => $event_id,
+          'event_id' => $participant->event_id,
           'contact_id' => $contact_id,
           'email' => $fields['email'],
         ];
@@ -269,7 +266,6 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
            'Participant'
           );
         }
-      }
     }
     $this->cart->save();
   }

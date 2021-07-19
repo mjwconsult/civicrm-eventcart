@@ -1,5 +1,7 @@
 <?php
 
+use Civi\Api4\Participant;
+
 /**
  * Class CRM_Event_Cart_Form_Checkout_Payment
  */
@@ -55,7 +57,7 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     }
 
     // Add reCAPTCHA
-    if (!CRM_Core_Session::getLoggedInContactID()) {
+    if (!CRM_Core_Session::getLoggedInContactID() && is_callable(['CRM_Utils_ReCAPTCHA', 'enableCaptchaOnForm'])) {
       CRM_Utils_ReCAPTCHA::enableCaptchaOnForm($this);
     }
   }
@@ -323,35 +325,46 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     }
 
     $params['contact_id'] = $contactID;
-    $params['now'] = date('YmdHis');
     $params['currency'] = $this->paymentPropertyBag->getCurrency();
 
-    if ($this->isPaymentRequired() && empty($params['is_pay_later'])) {
-      $contributionID = $this->createOrder($params)['id'];
-      $this->paymentPropertyBag->setContactID($contactID);
-      $this->paymentPropertyBag->setContributionID($contributionID);
-      $this->paymentPropertyBag->mergeLegacyInputParams($params);
+    if (empty($params['is_pay_later'])) {
+      if ($this->isPaymentRequired()) {
+        $contributionID = $this->createOrder($params)['id'];
+        $this->paymentPropertyBag->setContactID($contactID);
+        $this->paymentPropertyBag->setContributionID($contributionID);
+        $this->paymentPropertyBag->mergeLegacyInputParams($params);
 
-      $payment = Civi\Payment\System::singleton()->getById($params['payment_processor_id']);
-      try {
-        $result = $payment->doPayment($this->paymentPropertyBag);
-        $completedStatusId = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
-        if ($result['payment_status_id'] == $completedStatusId) {
-          civicrm_api3('Payment', 'create', [
-            'contribution_id' => $this->paymentPropertyBag->getContributionID(),
-            'total_amount' => $this->paymentPropertyBag->getAmount(),
-            'trxn_date' => $result['now'],
-            'is_send_contribution_notification' => 1,
-            'fee_amount' => $result['fee_amount'] ?? 0,
-            'payment_processor_id' => $this->_paymentProcessor['id'],
-          ]);
+        $payment = Civi\Payment\System::singleton()->getById($params['payment_processor_id']);
+        try {
+          $result = $payment->doPayment($this->paymentPropertyBag);
+          $completedStatusId = CRM_Core_PseudoConstant::getKey('CRM_Contribute_BAO_Contribution', 'contribution_status_id', 'Completed');
+          if ($result['payment_status_id'] == $completedStatusId) {
+            civicrm_api3('Payment', 'create', [
+              'contribution_id' => $this->paymentPropertyBag->getContributionID(),
+              'total_amount' => $this->paymentPropertyBag->getAmount(),
+              'is_send_contribution_notification' => 1,
+              'fee_amount' => $result['fee_amount'] ?? 0,
+              'payment_processor_id' => $this->_paymentProcessor['id'],
+            ]);
+          }
+        } catch (\Civi\Payment\Exception\PaymentProcessorException $e) {
+          Civi::log()->error('Payment processor exception: ' . $e->getMessage());
+          CRM_Core_Session::singleton()->setStatus($e->getMessage());
+          CRM_Utils_System::redirect(CRM_Utils_System::url('civicrm/event/cart_checkout', "_qf_Payment_display=1&qfKey={$this->controller->_key}", TRUE, NULL, FALSE));
         }
       }
-      catch (\Civi\Payment\Exception\PaymentProcessorException $e) {
-        Civi::log()->error('Payment processor exception: ' . $e->getMessage());
-        CRM_Core_Session::singleton()->setStatus($e->getMessage());
-        CRM_Utils_System::redirect(CRM_Utils_System::url('civicrm/event/cart_checkout', "_qf_Payment_display=1&qfKey={$this->controller->_key}", TRUE, NULL, FALSE));
+
+      // Free events are not included in the "Order" so we need to mark them as "Registered" here.
+      // For now we just set all participants (paid and free) to "Registered" even though the paid ones will have been
+      //   set by a successful payment above
+      $participantIDs = [];
+      foreach ($this->cart->get_main_event_participants() as $participant) {
+        $participantIDs[] = $participant->id;
       }
+      Participant::update(FALSE)
+        ->addValue('status_id:name', 'Registered')
+        ->addWhere('id', 'IN', $participantIDs)
+        ->execute();
     }
 
     $this->cart->completed = TRUE;
