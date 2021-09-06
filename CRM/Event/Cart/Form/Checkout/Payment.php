@@ -151,21 +151,11 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
 
   /**
    * Send email receipt.
-   * @fixme: Check if this works and does what we want
    *
    * @param array $events_in_cart
    * @param array $params
    */
-  public function emailReceipt($events_in_cart, $params) {
-    $contact_details = CRM_Contact_BAO_Contact::getContactDetails($this->payer_contact_id);
-    $state_province = new CRM_Core_DAO_StateProvince();
-    $state_province->id = $params["billing_state_province_id-{$this->_bltID}"];
-    $state_province->find();
-    $state_province->fetch();
-    $country = new CRM_Core_DAO_Country();
-    $country->id = $params["billing_country_id-{$this->_bltID}"];
-    $country->find();
-    $country->fetch();
+  private function sendEmailPaymentReceipt($events_in_cart, $params) {
     foreach ($this->line_items as & $line_item) {
       $location_params = ['entity_id' => $line_item['event']->id, 'entity_table' => 'civicrm_event'];
       $line_item['location'] = CRM_Core_BAO_Location::getValues($location_params, TRUE);
@@ -173,36 +163,49 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     }
     $send_template_params = [
       'table' => 'civicrm_msg_template',
-      'contactId' => $this->payer_contact_id,
+      'contactId' => $params['contact_id'],
       'from' => current(CRM_Core_BAO_Domain::getNameAndEmail(TRUE, TRUE)),
       'groupName' => 'msg_tpl_workflow_event',
       'isTest' => FALSE,
-      'toEmail' => $contact_details[1],
-      'toName' => $contact_details[0],
+      'toEmail' => $params['email'],
+      'toName' => $params['first_name'] . ' ' . $params['last_name'],
       'tplParams' => [
         'billing_name' => "{$params['billing_first_name']} {$params['billing_last_name']}",
-        'billing_city' => $params["billing_city-{$this->_bltID}"],
-        'billing_country' => $country->name,
-        'billing_postal_code' => $params["billing_postal_code-{$this->_bltID}"],
-        'billing_state' => $state_province->abbreviation,
-        'billing_street_address' => $params["billing_street_address-{$this->_bltID}"],
-        'credit_card_exp_date' => $params['credit_card_exp_date'],
-        'credit_card_type' => $params['credit_card_type'],
-        'credit_card_number' => "************" . substr($params['credit_card_number'], -4, 4),
-        // XXX cart->get_discounts
-        'discounts' => $this->discounts,
-        'email' => $contact_details[1],
+        'billing_city' => $params["billing_city-{$this->_bltID}"] ?? '',
+        'billing_postal_code' => $params["billing_postal_code-{$this->_bltID}"] ?? '',
+        'billing_street_address' => $params["billing_street_address-{$this->_bltID}"] ?? '',
+        'credit_card_exp_date' => $params['credit_card_exp_date'] ?? '',
+        'credit_card_type' => $params['credit_card_type'] ?? '',
+        'credit_card_number' => isset($params['credit_card_number']) ? "************" . substr($params['credit_card_number'], -4, 4) : '',
+        'discounts' => $this->discounts ?? [],
+        'email' => $params['email'],
         'events_in_cart' => $events_in_cart,
         'line_items' => $this->line_items,
-        'name' => $contact_details[0],
-        'transaction_id' => $params['trxn_id'],
-        'transaction_date' => $params['trxn_date'],
-        'is_pay_later' => $this->isPayLater(),
+        'name' => $params['first_name'] . ' ' . $params['last_name'],
+        'transaction_id' => $params['trxn_id'] ?? '',
+        'transaction_date' => $params['trxn_date'] ?? '',
+        'is_pay_later' => ($params['payment_status'] === 'Completed') ? FALSE : TRUE,
         'pay_later_receipt' => $this->pay_later_receipt,
       ],
       'valueName' => 'event_registration_receipt',
       'PDFFilename' => ts('confirmation') . '.pdf',
     ];
+
+    if (isset($params["billing_state_province_id-{$this->_bltID}"])) {
+      $state_province = new CRM_Core_DAO_StateProvince();
+      $state_province->id = $params["billing_state_province_id-{$this->_bltID}"];
+      $state_province->find();
+      $state_province->fetch();
+      $send_template_params['tplParams']['billing_state'] = $state_province->abbreviation;
+    }
+    if (isset($params["billing_country_id-{$this->_bltID}"])) {
+      $country = new CRM_Core_DAO_Country();
+      $country->id = $params["billing_country_id-{$this->_bltID}"];
+      $country->find();
+      $country->fetch();
+      $send_template_params['tplParams']['billing_country'] = $country->name;
+    }
+
     $template_params_to_copy = [
       'billing_name',
       'billing_city',
@@ -215,10 +218,101 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
       'credit_card_number',
     ];
     foreach ($template_params_to_copy as $template_param_to_copy) {
-      $this->set($template_param_to_copy, $send_template_params['tplParams'][$template_param_to_copy]);
+      $this->set($template_param_to_copy, $send_template_params['tplParams'][$template_param_to_copy] ?? '');
     }
 
     CRM_Core_BAO_MessageTemplate::sendTemplate($send_template_params);
+  }
+
+  /**
+   * Send a confirmation email to the participant that was registered for the event
+   *
+   * @param \CRM_Event_BAO_Participant
+   *
+   * @throws \API_Exception
+   * @throws \CRM_Core_Exception
+   */
+  private function sendEmailEventConfirmationReceipt($participant) {
+    $contactDetails = [];
+    $contactIds[] = $participant->contact_id;
+    list($currentContactDetails) = CRM_Utils_Token::getTokenDetails($contactIds, NULL,
+      FALSE, FALSE, NULL, [], 'CRM_Event_BAO_Participant');
+    foreach ($currentContactDetails as $contactId => $contactValues) {
+      $contactDetails[$contactId] = $contactValues;
+    }
+    $participantRoles = CRM_Event_PseudoConstant::participantRole();
+    $participantDetails = [];
+    $query = "SELECT * FROM civicrm_participant WHERE id = " . $participant->id;
+    $dao = CRM_Core_DAO::executeQuery($query);
+    while ($dao->fetch()) {
+      $participantDetails[$dao->id] = [
+        'id' => $dao->id,
+        'role' => $participantRoles[$dao->role_id],
+        'is_test' => $dao->is_test,
+        'event_id' => $dao->event_id,
+        'status_id' => $dao->status_id,
+        'fee_amount' => $dao->fee_amount,
+        'contact_id' => $dao->contact_id,
+        'register_date' => $dao->register_date,
+        'registered_by_id' => $dao->registered_by_id,
+      ];
+    }
+    $domainValues = [];
+    if (empty($domainValues)) {
+      $domain = CRM_Core_BAO_Domain::getDomain();
+      $tokens = [
+        'domain' =>
+          [
+            'name',
+            'phone',
+            'address',
+            'email',
+          ],
+        'contact' => CRM_Core_SelectValues::contactTokens(),
+      ];
+      foreach ($tokens['domain'] as $token) {
+        $domainValues[$token] = CRM_Utils_Token::getDomainTokenReplacement($token, $domain);
+      }
+    }
+    $eventDetails = [];
+    $eventParams = ['id' => $participant->event_id];
+    CRM_Event_BAO_Event::retrieve($eventParams, $eventDetails);
+    //get default participant role.
+    $eventDetails['participant_role'] = $participantRoles[$eventDetails['default_role_id']] ?? NULL;
+    //get the location info
+    $locParams = [
+      'entity_id' => $participant->event_id,
+      'entity_table' => 'civicrm_event',
+    ];
+    $eventDetails['location'] = CRM_Core_BAO_Location::getValues($locParams, TRUE);
+    $toEmail = $contactDetails[$participant->contact_id]['email'] ?? NULL;
+    if ($toEmail) {
+      //take a receipt from as event else domain.
+      $receiptFrom = $domainValues['name'] . ' <' . $domainValues['email'] . '>';
+      if (!empty($eventDetails['confirm_from_name']) && !empty($eventDetails['confirm_from_email'])) {
+        $receiptFrom = $eventDetails['confirm_from_name'] . ' <' . $eventDetails['confirm_from_email'] . '>';
+      }
+      $participantName = $contactDetails[$participant->contact_id]['display_name'];
+      $tplParams = [
+        'event' => $eventDetails,
+        'participant' => $participantDetails[$participant->id],
+        'participantID' => $participant->id,
+        'participant_status' => 'Registered',
+      ];
+
+      $sendTemplateParams = [
+        'groupName' => 'msg_tpl_workflow_event',
+        'valueName' => 'event_online_receipt',
+        'contactId' => $participantDetails[$participant->id]['contact_id'],
+        'tplParams' => $tplParams,
+        'from' => $receiptFrom,
+        'toName' => $participantName,
+        'toEmail' => $toEmail,
+        'cc' => $eventDetails['cc_confirm'] ?? NULL,
+        'bcc' => $eventDetails['bcc_confirm'] ?? NULL,
+      ];
+      CRM_Core_BAO_MessageTemplate::sendTemplate($sendTemplateParams);
+    }
   }
 
   /**
@@ -343,11 +437,14 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
             civicrm_api3('Payment', 'create', [
               'contribution_id' => $this->paymentPropertyBag->getContributionID(),
               'total_amount' => $this->paymentPropertyBag->getAmount(),
-              'is_send_contribution_notification' => 1,
+              'is_send_contribution_notification' => 0,
               'fee_amount' => $result['fee_amount'] ?? 0,
               'payment_processor_id' => $this->_paymentProcessor['id'],
             ]);
           }
+          $params['trxn_id'] = $result['trxn_id'] ?? '';
+          $params['trxn_date'] = date('YmdHis');
+          $params['payment_status'] = $result['payment_status'];
         } catch (\Civi\Payment\Exception\PaymentProcessorException $e) {
           Civi::log()->error('Payment processor exception: ' . $e->getMessage());
           CRM_Core_Session::singleton()->setStatus($e->getMessage());
@@ -371,6 +468,13 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     $this->cart->completed = TRUE;
     $this->cart->save();
     $transaction->commit();
+
+    // Send the payment receipt
+    $this->sendEmailPaymentReceipt($this->cart->events_in_carts, $params);
+    // Send registration confirmation receipts to each participant
+    foreach ($this->cart->get_main_event_participants() as $participant) {
+      $this->sendEmailEventConfirmationReceipt($participant);
+    }
 
     $session = CRM_Core_Session::singleton();
     $session->set('last_event_cart_id', $this->cart->id);
