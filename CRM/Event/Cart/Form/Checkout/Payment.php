@@ -1,5 +1,6 @@
 <?php
 
+use Civi\Api4\Contact;
 use Civi\Api4\Participant;
 
 /**
@@ -439,7 +440,7 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     CRM_Core_Payment_Form::setDefaultValues($this, $contactID);
 
     // @todo replace this with a profile
-    $contact = \Civi\Api4\Contact::get(FALSE)
+    $contact = Contact::get(FALSE)
       ->addSelect('first_name', 'last_name')
       ->addWhere('id', '=', $contactID)
       ->execute()
@@ -474,7 +475,7 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
     $extensions = civicrm_api3('Extension', 'get', [
       'full_name' => 'org.civicrm.module.cividiscount',
     ]);
-    if (empty($extensions['id']) || ($extensions['values'][$extensions['id']]['status'] !== 'installed')) {
+    if (empty($extensions['count']) || ($extensions['values'][$extensions['id']]['status'] !== 'installed')) {
       return FALSE;
     }
 

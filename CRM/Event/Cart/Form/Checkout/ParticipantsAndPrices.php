@@ -214,58 +214,57 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
    * Post process function.
    */
   public function postProcess() {
-    $email_to_contact_id = [];
     $submittedValues = $this->controller->exportValues($this->_name);
 
-      foreach ($submittedValues['field'] as $participant_id => $fields) {
-        $participant = Participant::get(FALSE)
-          ->addWhere('id', '=', $participant_id)
-          ->execute()
-          ->first();
+    foreach ($submittedValues['field'] as $participant_id => $fields) {
+      $participant = Participant::get(FALSE)
+        ->addWhere('id', '=', $participant_id)
+        ->execute()
+        ->first();
 
-        // Email sometimes gets passed in as eg. "email-Primary"
-        // Normalise it to "email"
-        foreach ($fields as $key => $value) {
-          if (substr($key, 0, 5) === 'email') {
-            $fields['email'] = $fields[$key];
-            unset($fields[$key]);
-            break;
-          }
+      // Email sometimes gets passed in as eg. "email-Primary"
+      // Normalise it to "email"
+      foreach ($fields as $key => $value) {
+        if (substr($key, 0, 5) === 'email') {
+          $fields['email'] = $fields[$key];
+          unset($fields[$key]);
+          break;
+        }
+      }
+
+      $contact_id = self::find_or_create_contact($fields, $participant['contact_id']);
+      $participant = $this->cart->get_event_in_cart_by_event_id($participant['event_id'])->get_participant_by_id
+      ($participant_id);
+      if ($participant->contact_id && $contact_id != $participant->contact_id) {
+        foreach ($this->cart->get_subparticipants($participant) as $subparticipant) {
+          $subparticipant->contact_id = $contact_id;
+          $subparticipant->save();
         }
 
-        $contact_id = self::find_or_create_contact($fields, $participant['contact_id']);
-        $participant = $this->cart->get_event_in_cart_by_event_id($participant['event_id'])->get_participant_by_id
-        ($participant_id);
-        if ($participant->contact_id && $contact_id != $participant->contact_id) {
-          foreach ($this->cart->get_subparticipants($participant) as $subparticipant) {
-            $subparticipant->contact_id = $contact_id;
-            $subparticipant->save();
-          }
+        $participant->contact_id = $contact_id;
+        $participant->save();
+      }
 
-          $participant->contact_id = $contact_id;
-          $participant->save();
-        }
+      $participantParams = [
+        'id' => $participant_id,
+        'cart_id' => $this->cart->id,
+        'event_id' => $participant->event_id,
+        'contact_id' => $contact_id,
+        'email' => $fields['email'],
+      ];
+      $this->cart->add_participant_to_cart($participantParams);
 
-        $participantParams = [
-          'id' => $participant_id,
-          'cart_id' => $this->cart->id,
-          'event_id' => $participant->event_id,
-          'contact_id' => $contact_id,
-          'email' => $fields['email'],
-        ];
-        $this->cart->add_participant_to_cart($participantParams);
+      if (array_key_exists('field', $this->_submitValues) && array_key_exists($participant_id, $this->_submitValues['field'])) {
+        $custom_fields = $participant->get_form()->get_participant_custom_data_fields();
 
-        if (array_key_exists('field', $this->_submitValues) && array_key_exists($participant_id, $this->_submitValues['field'])) {
-          $custom_fields = $participant->get_form()->get_participant_custom_data_fields();
+        CRM_Contact_BAO_Contact::createProfileContact($this->_submitValues['field'][$participant_id], $custom_fields, $contact_id);
 
-          CRM_Contact_BAO_Contact::createProfileContact($this->_submitValues['field'][$participant_id], $custom_fields, $contact_id);
-
-          CRM_Core_BAO_CustomValueTable::postProcess($this->_submitValues['field'][$participant_id],
-            'civicrm_participant',
-            $participant_id,
-           'Participant'
-          );
-        }
+        CRM_Core_BAO_CustomValueTable::postProcess($this->_submitValues['field'][$participant_id],
+          'civicrm_participant',
+          $participant_id,
+          'Participant'
+        );
+      }
     }
     $this->cart->save();
   }

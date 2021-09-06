@@ -319,7 +319,7 @@ class CRM_Event_Cart_BAO_EventInCart extends CRM_Event_Cart_DAO_EventInCart impl
       return [
         'label' => ts("Add to Cart"),
         'path' => 'civicrm/event/add_to_cart',
-        'query' => "reset=1&id={$event_id}",
+        'query' => "reset=1&id={$event_id}&cid={$cart->defaultParticipantContactID}",
       ];
     }
   }

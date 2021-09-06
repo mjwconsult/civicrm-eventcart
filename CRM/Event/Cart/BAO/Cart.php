@@ -71,18 +71,7 @@ class CRM_Event_Cart_BAO_Cart extends CRM_Event_Cart_DAO_Cart {
    * @throws Exception
    */
   public static function create($params) {
-    $transaction = new CRM_Core_Transaction();
-
-    $cart = self::add($params);
-
-    if (is_a($cart, 'CRM_Core_Error')) {
-      $transaction->rollback();
-      throw new CRM_Core_Exception(ts('There was an error creating an event cart'));
-    }
-
-    $transaction->commit();
-
-    return $cart;
+    return self::add($params);
   }
 
   /**
@@ -146,7 +135,8 @@ class CRM_Event_Cart_BAO_Cart extends CRM_Event_Cart_DAO_Cart {
       }
       $session->set('event_cart_id', $cart->id);
     }
-    $cart->defaultParticipantContactID = CRM_Utils_Request::retrieveValue('cid', 'Positive', CRM_Core_Session::getLoggedInContactID());
+    // cid can be 0 for new contact
+    $cart->defaultParticipantContactID = CRM_Utils_Request::retrieveValue('cid', 'Integer', CRM_Core_Session::getLoggedInContactID());
     $cart->load_associations();
     return $cart;
   }
