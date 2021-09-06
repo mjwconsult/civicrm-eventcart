@@ -227,7 +227,7 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
   /**
    * Send a confirmation email to the participant that was registered for the event
    *
-   * @param \CRM_Event_BAO_Participant
+   * @param \CRM_Event_BAO_Participant $participant
    *
    * @throws \API_Exception
    * @throws \CRM_Core_Exception
@@ -445,7 +445,8 @@ class CRM_Event_Cart_Form_Checkout_Payment extends CRM_Event_Cart_Form_Cart {
           $params['trxn_id'] = $result['trxn_id'] ?? '';
           $params['trxn_date'] = date('YmdHis');
           $params['payment_status'] = $result['payment_status'];
-        } catch (\Civi\Payment\Exception\PaymentProcessorException $e) {
+        }
+        catch (\Civi\Payment\Exception\PaymentProcessorException $e) {
           Civi::log()->error('Payment processor exception: ' . $e->getMessage());
           CRM_Core_Session::singleton()->setStatus($e->getMessage());
           CRM_Utils_System::redirect(CRM_Utils_System::url('civicrm/event/cart_checkout', "_qf_Payment_display=1&qfKey={$this->controller->_key}", TRUE, NULL, FALSE));

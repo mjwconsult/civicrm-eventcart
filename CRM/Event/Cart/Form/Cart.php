@@ -98,6 +98,7 @@ class CRM_Event_Cart_Form_Cart extends CRM_Core_Form {
 
   /**
    * @param array $fields
+   * @param int $contactID
    *
    * @return int|mixed|null
    */

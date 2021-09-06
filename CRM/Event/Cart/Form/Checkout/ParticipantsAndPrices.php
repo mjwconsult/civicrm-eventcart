@@ -233,8 +233,7 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
       }
 
       $contact_id = self::find_or_create_contact($fields, $participant['contact_id']);
-      $participant = $this->cart->get_event_in_cart_by_event_id($participant['event_id'])->get_participant_by_id
-      ($participant_id);
+      $participant = $this->cart->get_event_in_cart_by_event_id($participant['event_id'])->get_participant_by_id($participant_id);
       if ($participant->contact_id && $contact_id != $participant->contact_id) {
         foreach ($this->cart->get_subparticipants($participant) as $subparticipant) {
           $subparticipant->contact_id = $contact_id;
