@@ -216,7 +216,7 @@ class CRM_Event_Cart_Form_Checkout_ParticipantsAndPrices extends CRM_Event_Cart_
   public function postProcess() {
     $submittedValues = $this->controller->exportValues($this->_name);
 
-    foreach ($submittedValues['field'] as $participant_id => $fields) {
+    foreach (($submittedValues['field'] ?? []) as $participant_id => $fields) {
       $participant = Participant::get(FALSE)
         ->addWhere('id', '=', $participant_id)
         ->execute()
